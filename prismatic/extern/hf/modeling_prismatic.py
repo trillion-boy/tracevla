@@ -28,6 +28,7 @@ from transformers import AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import ModelOutput
 
 from .configuration_prismatic import OpenVLAConfig, PrismaticConfig
+from prismatic.models.vlms.latent_foveation import LatentFoveation
 
 # Get Logger
 logger = logging.getLogger(__name__)
@@ -268,6 +269,9 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         self.vocab_size = config.text_config.vocab_size
         self.pad_token_id = config.pad_token_id
 
+        # Latent Foveation (disabled by default; enable via configure_foveation())
+        self.latent_foveation: Optional[LatentFoveation] = None
+
         # HF Boilerplate =>> initializes weights via `_init_weights()` and sets gradient checkpointing
         self.post_init()
 
@@ -289,6 +293,25 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
 
     def set_decoder(self, decoder: nn.Module) -> None:
         self.language_model.set_decoder(decoder)
+
+    def configure_foveation(
+        self,
+        image_size: int = 224,
+        patch_size: int = 14,
+        fovea_scale: float = 1.2,
+        secondary_scale: float = 0.7,
+        bg_scale: float = 0.4,
+        apply_to_trace_image: bool = False,
+    ) -> None:
+        """Enable latent foveation.  Call this once after loading the model."""
+        self.latent_foveation = LatentFoveation(
+            image_size=image_size,
+            patch_size=patch_size,
+            fovea_scale=fovea_scale,
+            secondary_scale=secondary_scale,
+            bg_scale=bg_scale,
+            apply_to_trace_image=apply_to_trace_image,
+        )
 
     def tie_weights(self) -> None:
         self.language_model.tie_weights()  # Note: `Llama-2` and `Mistral` don't tie weights (no-op)
@@ -319,6 +342,8 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         output_projector_features: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         freeze_vision_backbone: Optional[bool] = False,
+        fovea_bbox: Optional[torch.FloatTensor] = None,
+        secondary_bbox: Optional[torch.FloatTensor] = None,
     ) -> Union[Tuple, PrismaticCausalLMOutputWithPast]:
         """Run a forward pass through the VLM, returning a PrismaticCausalLMOutputWithPast instance."""
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -382,9 +407,15 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
 
             # Visual Feature Extraction
             patch_features = self.vision_backbone(pixel_values, freeze=freeze_vision_backbone)
-            
+
             # Projection Logic =>> Update Attention Mask
             projected_patch_embeddings = self.projector(patch_features)
+
+            # Latent Foveation: spatially weight projected patch embeddings
+            if self.latent_foveation is not None and fovea_bbox is not None:
+                projected_patch_embeddings = self.latent_foveation(
+                    projected_patch_embeddings, fovea_bbox, secondary_bbox
+                )
             projected_patch_attention_mask = None
             if attention_mask is not None:
                 projected_patch_attention_mask = torch.full(
@@ -490,13 +521,15 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         else:
             model_inputs = {"input_ids": input_ids}
 
-        # Make sure `pixel_values` are preserved in `model_inputs`
+        # Make sure `pixel_values` and foveation kwargs are preserved
         model_inputs.update(
             {
                 "attention_mask": attention_mask,
                 "pixel_values": pixel_values,
                 "past_key_values": past_key_values,
                 "use_cache": kwargs.get("use_cache"),
+                "fovea_bbox": kwargs.get("fovea_bbox"),
+                "secondary_bbox": kwargs.get("secondary_bbox"),
             }
         )
 
