@@ -129,6 +129,7 @@ def parse_args():
     p.add_argument("--min-grasp-steps",   type=int,   default=15)
     p.add_argument("--min-place-steps",   type=int,   default=8)
     p.add_argument("--consec-close",      type=int,   default=3)
+    p.add_argument("--consec-open",       type=int,   default=3)
     # dino
     p.add_argument("--dino-cache-steps",  type=int,   default=5)
     p.add_argument("--box-threshold",     type=float, default=0.15)
@@ -169,6 +170,7 @@ def main():
         min_grasp_steps=args.min_grasp_steps,
         min_place_steps=args.min_place_steps,
         consecutive_close_required=args.consec_close,
+        consecutive_open_required=args.consec_open,
         enable_latent_mask=not args.disable_latent_mask,
     )
     model.start(num_envs=1)

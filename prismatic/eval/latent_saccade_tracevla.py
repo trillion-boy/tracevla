@@ -169,6 +169,7 @@ class SaccadeStateMachine:
         min_grasp_steps: int = 15,
         min_place_steps: int = 8,
         consecutive_close_required: int = 3,
+        consecutive_open_required: int = 3,
     ):
         self.source_noun = source_noun
         self.dest_noun = dest_noun
@@ -176,10 +177,12 @@ class SaccadeStateMachine:
         self.min_grasp_steps = min_grasp_steps
         self.min_place_steps = min_place_steps
         self.consecutive_close_required = consecutive_close_required
+        self.consecutive_open_required = consecutive_open_required
         self._state = self.GRASP
         self._grasp_steps = 0
         self._place_steps = 0
         self._close_count = 0
+        self._open_count = 0
 
     def update(self, gripper_norm: float) -> bool:
         """Return True if a phase transition occurred.
@@ -203,19 +206,28 @@ class SaccadeStateMachine:
                 self._grasp_steps = 0
                 self._place_steps = 0
                 self._close_count = 0
+                self._open_count = 0
                 transitioned = True
                 print(f"[Saccade] grasp → place (gripper={gripper_norm:.2f})")
         else:
             self._place_steps += 1
-            # Only allow PLACE→GRASP after min_place_steps (prevents immediate bounce-back)
-            if self._place_steps >= self.min_place_steps and gripper_norm > self.close_thresh:
+            # Count consecutive OPEN commands (mirrors close logic)
+            self._open_count = (
+                self._open_count + 1 if gripper_norm > self.close_thresh else 0
+            )
+            if (
+                self._place_steps >= self.min_place_steps
+                and self._open_count >= self.consecutive_open_required
+            ):
+                actual_place_steps = self._place_steps
                 self._state = self.GRASP
                 self._grasp_steps = 0
                 self._place_steps = 0
                 self._close_count = 0
+                self._open_count = 0
                 transitioned = True
                 print(f"[Saccade] place → grasp (gripper={gripper_norm:.2f}, "
-                      f"place_steps={self._place_steps})")
+                      f"place_steps={actual_place_steps})")
         return transitioned
 
     @property
@@ -297,6 +309,7 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         min_grasp_steps: int = 15,
         min_place_steps: int = 8,
         consecutive_close_required: int = 3,
+        consecutive_open_required: int = 3,
         enable_latent_mask: bool = True,
     ) -> None:
         super().__init__(
@@ -320,6 +333,7 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         self._min_grasp_steps = min_grasp_steps
         self._min_place_steps = min_place_steps
         self._consecutive_close_required = consecutive_close_required
+        self._consecutive_open_required = consecutive_open_required
         self._enable_latent_mask = enable_latent_mask
 
         self.dino = GroundingDINOWrapper(
@@ -385,6 +399,7 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
                 min_grasp_steps=self._min_grasp_steps,
                 min_place_steps=self._min_place_steps,
                 consecutive_close_required=self._consecutive_close_required,
+                consecutive_open_required=self._consecutive_open_required,
             )
             for _ in range(num_envs)
         ]
