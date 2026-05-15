@@ -552,6 +552,8 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             # ── Update saccade state from gripper output ───────────────
             # raw_action[6] = open_gripper (0=open, 1=close, normalised)
             gripper_norm = float(raw_action[6])
+            print(f"[dbg] env{i} gripper_raw={gripper_norm:.3f}  "
+                  f"close_count={saccade._close_count}  grasp_steps={saccade._grasp_steps}")
             transitioned = saccade.update(gripper_norm)
             if transitioned:
                 self.fovea_cache[i]     = None
