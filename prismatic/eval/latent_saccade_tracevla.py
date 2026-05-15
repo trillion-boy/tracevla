@@ -481,11 +481,10 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             mask = _bbox_to_token_mask(fovea_bbox, G, G, H, W, self._bbox_margin)
             weight[mask] = self._fovea_weight
 
-        # Normalise so mean == 1.0: preserves overall token magnitude
-        weight = weight / weight.mean()
-
-        print(f"[LatentSaccade] weight map: fovea_norm={weight.max():.2f}  "
-              f"bg_norm={weight.min():.2f}  bbox={fovea_bbox}")
+        n_fovea = int((weight >= self._fovea_weight).sum())
+        n_bg    = int((weight <= self._bg_weight).sum())
+        print(f"[LatentSaccade] weight map: fovea={n_fovea}tok({self._fovea_weight}x)  "
+              f"bg={n_bg}tok({self._bg_weight}x)  bbox={fovea_bbox}")
         return weight.reshape(-1)   # [G*G]
 
     # ── main inference loop ───────────────────────────────────────────────────
