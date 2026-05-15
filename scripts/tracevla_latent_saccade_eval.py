@@ -122,11 +122,12 @@ def parse_args():
     p.add_argument("--n-episodes", type=int, default=24)
     p.add_argument("--output-dir",  default="/tmp/latent_saccade_results")
     # weight map
-    p.add_argument("--bg-weight",         type=float, default=0.2)
-    p.add_argument("--place-src-weight",  type=float, default=0.5)
-    p.add_argument("--fovea-weight",      type=float, default=1.0)
+    p.add_argument("--bg-weight",         type=float, default=0.5)
+    p.add_argument("--place-src-weight",  type=float, default=0.8)
+    p.add_argument("--fovea-weight",      type=float, default=1.2)
     # saccade
     p.add_argument("--min-grasp-steps",   type=int,   default=15)
+    p.add_argument("--min-place-steps",   type=int,   default=8)
     p.add_argument("--consec-close",      type=int,   default=3)
     # dino
     p.add_argument("--dino-cache-steps",  type=int,   default=5)
@@ -166,6 +167,7 @@ def main():
         text_threshold=args.text_threshold,
         bbox_margin=args.bbox_margin,
         min_grasp_steps=args.min_grasp_steps,
+        min_place_steps=args.min_place_steps,
         consecutive_close_required=args.consec_close,
         enable_latent_mask=not args.disable_latent_mask,
     )
@@ -265,6 +267,7 @@ def main():
             "place_src_weight":   args.place_src_weight,
             "fovea_weight":       args.fovea_weight,
             "min_grasp_steps":    args.min_grasp_steps,
+            "min_place_steps":    args.min_place_steps,
             "consec_close":       args.consec_close,
             "dino_cache_steps":   args.dino_cache_steps,
         },

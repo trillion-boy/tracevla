@@ -167,15 +167,18 @@ class SaccadeStateMachine:
         dest_noun: str = "",
         close_thresh: float = 0.5,
         min_grasp_steps: int = 15,
+        min_place_steps: int = 8,
         consecutive_close_required: int = 3,
     ):
         self.source_noun = source_noun
         self.dest_noun = dest_noun
         self.close_thresh = close_thresh
         self.min_grasp_steps = min_grasp_steps
+        self.min_place_steps = min_place_steps
         self.consecutive_close_required = consecutive_close_required
         self._state = self.GRASP
         self._grasp_steps = 0
+        self._place_steps = 0
         self._close_count = 0
 
     def update(self, gripper_norm: float) -> bool:
@@ -198,17 +201,21 @@ class SaccadeStateMachine:
             ):
                 self._state = self.PLACE
                 self._grasp_steps = 0
+                self._place_steps = 0
                 self._close_count = 0
                 transitioned = True
                 print(f"[Saccade] grasp → place (gripper={gripper_norm:.2f})")
         else:
-            # Transition back to GRASP when model outputs OPEN command (releasing)
-            if gripper_norm > self.close_thresh:
+            self._place_steps += 1
+            # Only allow PLACE→GRASP after min_place_steps (prevents immediate bounce-back)
+            if self._place_steps >= self.min_place_steps and gripper_norm > self.close_thresh:
                 self._state = self.GRASP
                 self._grasp_steps = 0
+                self._place_steps = 0
                 self._close_count = 0
                 transitioned = True
-                print(f"[Saccade] place → grasp (gripper={gripper_norm:.2f})")
+                print(f"[Saccade] place → grasp (gripper={gripper_norm:.2f}, "
+                      f"place_steps={self._place_steps})")
         return transitioned
 
     @property
@@ -280,14 +287,15 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         device: int = 0,
         # ── LatentSaccade args ────────────────────────────────────────
         dino_model: str = "IDEA-Research/grounding-dino-tiny",
-        bg_weight: float = 0.2,
-        place_src_weight: float = 0.5,
-        fovea_weight: float = 1.0,
+        bg_weight: float = 0.5,
+        place_src_weight: float = 0.8,
+        fovea_weight: float = 1.2,
         dino_cache_steps: int = 5,
         box_threshold: float = 0.15,
         text_threshold: float = 0.15,
         bbox_margin: int = 2,
         min_grasp_steps: int = 15,
+        min_place_steps: int = 8,
         consecutive_close_required: int = 3,
         enable_latent_mask: bool = True,
     ) -> None:
@@ -310,6 +318,7 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         self._dino_cache_steps = dino_cache_steps
         self._bbox_margin = bbox_margin
         self._min_grasp_steps = min_grasp_steps
+        self._min_place_steps = min_place_steps
         self._consecutive_close_required = consecutive_close_required
         self._enable_latent_mask = enable_latent_mask
 
@@ -374,6 +383,7 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             SaccadeStateMachine(
                 close_thresh=0.5,
                 min_grasp_steps=self._min_grasp_steps,
+                min_place_steps=self._min_place_steps,
                 consecutive_close_required=self._consecutive_close_required,
             )
             for _ in range(num_envs)
