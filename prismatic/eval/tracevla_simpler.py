@@ -64,9 +64,7 @@ class TraceVLAInference:
 
         from cotracker.predictor import CoTrackerPredictor
         self.cotracker_model = CoTrackerPredictor(
-            checkpoint=os.path.join(
-                '/mnt/amlfs-01/home/ruijiez/co-tracker/checkpoints/scaled_offline.pth'
-                )
+            checkpoint=cotracker_model_path
         ).to(device)
 
         self.prompt_template = "In: What action should the robot take to {task_description}?\nOut:"
@@ -131,7 +129,7 @@ class TraceVLAInference:
 
             self.trace_processors = []
             for i in range(len(policy_setups)):
-                self.trace_processor = TraceProcessor(cotracker_model=self.cotracker_model_path,
+                self.trace_processor = TraceProcessor(cotracker_model_path=self.cotracker_model_path,
                                                       window_size=15 if policy_setups[i] == 'google_robot' else 10,
                                                       device=self.vla.device,
                                                      )
