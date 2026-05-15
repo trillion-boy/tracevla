@@ -179,12 +179,18 @@ class SaccadeStateMachine:
         self._close_count = 0
 
     def update(self, gripper_norm: float) -> bool:
-        """Return True if a phase transition occurred."""
+        """Return True if a phase transition occurred.
+
+        gripper_norm is raw_action[6] = unnormalised open_gripper value where
+        high (> close_thresh) means OPEN command and
+        low  (< close_thresh) means CLOSE command.
+        """
         transitioned = False
         if self._state == self.GRASP:
             self._grasp_steps += 1
+            # Count steps where model outputs a CLOSE command (low value)
             self._close_count = (
-                self._close_count + 1 if gripper_norm >= self.close_thresh else 0
+                self._close_count + 1 if gripper_norm <= self.close_thresh else 0
             )
             if (
                 self._grasp_steps >= self.min_grasp_steps
@@ -196,7 +202,8 @@ class SaccadeStateMachine:
                 transitioned = True
                 print(f"[Saccade] grasp → place (gripper={gripper_norm:.2f})")
         else:
-            if gripper_norm < self.close_thresh:
+            # Transition back to GRASP when model outputs OPEN command (releasing)
+            if gripper_norm > self.close_thresh:
                 self._state = self.GRASP
                 self._grasp_steps = 0
                 self._close_count = 0
@@ -445,7 +452,11 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         fovea_bbox: Optional[Tuple],
         secondary_bbox: Optional[Tuple],
     ) -> Optional[torch.Tensor]:
-        """Return flattened weight tensor [H_t*W_t], or None → no masking."""
+        """Return flattened weight tensor [H_t*W_t], or None → no masking.
+
+        Weights are normalised so their mean == 1.0, preserving overall
+        embedding magnitude and avoiding distribution shift in the LLM.
+        """
         if fovea_bbox is None and secondary_bbox is None:
             return None
         H, W   = image_np.shape[:2]
@@ -460,10 +471,11 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             mask = _bbox_to_token_mask(fovea_bbox, G, G, H, W, self._bbox_margin)
             weight[mask] = self._fovea_weight
 
-        n_fovea = int((weight >= self._fovea_weight).sum())
-        n_bg    = int((weight <= self._bg_weight).sum())
-        print(f"[LatentSaccade] weight map: fovea={n_fovea}tok  bg={n_bg}tok  "
-              f"bbox={fovea_bbox}")
+        # Normalise so mean == 1.0: preserves overall token magnitude
+        weight = weight / weight.mean()
+
+        print(f"[LatentSaccade] weight map: fovea_norm={weight.max():.2f}  "
+              f"bg_norm={weight.min():.2f}  bbox={fovea_bbox}")
         return weight.reshape(-1)   # [G*G]
 
     # ── main inference loop ───────────────────────────────────────────────────
