@@ -10,6 +10,10 @@ from transforms3d.euler import euler2axangle
 from transformers import AutoModelForVision2Seq, AutoProcessor
 from .trace_processor import TraceProcessor
 
+def get_batch_from_info(info_dicts: List[Dict], key: str) -> List:
+    return [d[key] for d in info_dicts]
+
+
 def resize_image(img, resize_size):
     """
     Takes numpy array corresponding to a single image and returns resized image as numpy array.
@@ -140,6 +144,13 @@ class TraceVLAInference:
                                                      )
                 self.trace_processor.reset()
                 self.trace_processors.append(self.trace_processor)
+
+    def unwrap_ids(self, ids):
+        if ids is None:
+            return list(range(self.num_envs))
+        if isinstance(ids, np.ndarray):
+            return ids.tolist()
+        return list(ids)
 
     def reset_states_at(self, idx, task_description):
         assert idx < self.num_envs, f"{idx=}, {self.num_envs=}"
