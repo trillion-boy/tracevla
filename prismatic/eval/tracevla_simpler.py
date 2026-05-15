@@ -50,9 +50,14 @@ class TraceVLAInference:
             trust_remote_code=True,
             center_crop=False
         )
+        try:
+            import flash_attn  # noqa: F401
+            attn_impl = "flash_attention_2"
+        except ImportError:
+            attn_impl = "sdpa"
         self.vla = AutoModelForVision2Seq.from_pretrained(
             model_path,
-            attn_implementation="flash_attention_2",  # [Optional] Requires `flash_attn`
+            attn_implementation=attn_impl,
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
             trust_remote_code=True
