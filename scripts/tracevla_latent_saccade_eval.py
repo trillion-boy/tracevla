@@ -64,7 +64,7 @@ TASK_CONFIGS = {
         "control_freq": 5, "sim_freq": 500, "max_episode_steps": 60,
     },
     "widowx_spoon_on_towel": {
-        "env_name":    "PutSpoonOnTableclothInScene-v0",
+        "env_name":    "PutSpoonOnTableClothInScene-v0",
         "robot":       "widowx",
         "scene_name":  "bridge_table_1_v1",
         "rgb_overlay_path":    "ManiSkill2_real2sim/data/real_inpainting/bridge_real_eval_1.png",
