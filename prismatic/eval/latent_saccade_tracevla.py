@@ -71,6 +71,13 @@ class GroundingDINOWrapper:
         r"(?:stack)\s+(?:the\s+)?(\w+(?:\s+\w+)?)",
     ]
 
+    # Remap instruction nouns to better GroundingDINO query strings.
+    # "towel" in SimplerEnv is actually a tablecloth; DINO detects it more
+    # reliably with the correct label.
+    _NOUN_REMAP: dict = {
+        "towel": "tablecloth",
+    }
+
     def __init__(
         self,
         model_name: str = "IDEA-Research/grounding-dino-tiny",
@@ -114,9 +121,13 @@ class GroundingDINOWrapper:
             r"\s+(?:in|on|into|onto|to)\s+(?:the\s+)?(.+?)(?:\s*$|\s+and\s)"
         )
         m = re.search(pat, instr)
+        remap = GroundingDINOWrapper._NOUN_REMAP
         if m:
-            return m.group(1).strip().rstrip(".,"), m.group(2).strip().rstrip(".,")
-        return GroundingDINOWrapper.extract_target_noun(instruction), None
+            src = remap.get(m.group(1).strip().rstrip(".,"), m.group(1).strip().rstrip(".,"))
+            dst = remap.get(m.group(2).strip().rstrip(".,"), m.group(2).strip().rstrip(".,"))
+            return src, dst
+        return remap.get(GroundingDINOWrapper.extract_target_noun(instruction),
+                         GroundingDINOWrapper.extract_target_noun(instruction)), None
 
     def detect_bbox(
         self, image_rgb: np.ndarray, text_query: str
