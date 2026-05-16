@@ -299,9 +299,9 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         device: int = 0,
         # ── LatentSaccade args ────────────────────────────────────────
         dino_model: str = "IDEA-Research/grounding-dino-tiny",
-        bg_weight: float = 0.2,
-        place_src_weight: float = 0.5,
-        fovea_weight: float = 1.0,
+        bg_weight: float = 0.5,
+        place_src_weight: float = 0.8,
+        fovea_weight: float = 1.2,
         dino_cache_steps: int = 5,
         box_threshold: float = 0.15,
         text_threshold: float = 0.15,
