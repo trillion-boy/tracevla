@@ -443,7 +443,6 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         self.dino_cache_step    = [0]    * num_envs
         self._last_good_fovea   = [None] * num_envs
         self._last_good_secondary = [None] * num_envs
-        self._last_fovea_target = [None] * num_envs
 
     def start_episode(
         self,
@@ -463,10 +462,9 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             self.saccades[idx].source_noun = src
             self.saccades[idx].dest_noun   = dst
             self.saccades[idx].reset()
-            self.fovea_cache[idx]        = None
-            self.secondary_cache[idx]    = None
-            self.dino_cache_step[idx]    = 0
-            self._last_fovea_target[idx] = None
+            self.fovea_cache[idx]     = None
+            self.secondary_cache[idx] = None
+            self.dino_cache_step[idx] = 0
             print(f"[LatentSaccade] env{idx} instruction → src='{src}'  dst='{dst}'")
 
     def reset_states_at(self, idx: int, task_description: str):
@@ -481,7 +479,6 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             self.dino_cache_step[idx]      = 0
             self._last_good_fovea[idx]     = None
             self._last_good_secondary[idx] = None
-            self._last_fovea_target[idx]   = None
 
     # ── DINO bbox with per-env caching ────────────────────────────────────────
 
@@ -501,14 +498,6 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         saccade = self.saccades[env_idx]
         target  = saccade.current_target
         thr     = self._bbox_confidence_threshold
-
-        # Invalidate last-good cache when target noun changes (phase transition)
-        if target != self._last_fovea_target[env_idx]:
-            self._last_good_fovea[env_idx]   = None
-            self._last_good_secondary[env_idx] = None
-            self._last_fovea_target[env_idx] = target
-            if target is not None:
-                print(f"[DINO] target changed → '{target}', cache reset")
 
         fovea_bbox = None
         if target:
