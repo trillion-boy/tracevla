@@ -122,9 +122,9 @@ def parse_args():
     p.add_argument("--n-episodes", type=int, default=24)
     p.add_argument("--output-dir",  default="/tmp/latent_saccade_results")
     # weight map
-    p.add_argument("--bg-weight",         type=float, default=0.5)
-    p.add_argument("--place-src-weight",  type=float, default=0.8)
-    p.add_argument("--fovea-weight",      type=float, default=1.2)
+    p.add_argument("--bg-weight",         type=float, default=0.2)
+    p.add_argument("--place-src-weight",  type=float, default=0.5)
+    p.add_argument("--fovea-weight",      type=float, default=1.0)
     # saccade
     p.add_argument("--min-grasp-steps",   type=int,   default=15)
     p.add_argument("--min-place-steps",   type=int,   default=8)

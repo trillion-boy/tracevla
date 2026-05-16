@@ -299,9 +299,9 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         device: int = 0,
         # ── LatentSaccade args ────────────────────────────────────────
         dino_model: str = "IDEA-Research/grounding-dino-tiny",
-        bg_weight: float = 0.5,
-        place_src_weight: float = 0.8,
-        fovea_weight: float = 1.2,
+        bg_weight: float = 0.2,
+        place_src_weight: float = 0.5,
+        fovea_weight: float = 1.0,
         dino_cache_steps: int = 5,
         box_threshold: float = 0.15,
         text_threshold: float = 0.15,
@@ -349,7 +349,7 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
 
         # Hook state — set per-env before each predict_action() call
         self._current_weight_map: Optional[torch.Tensor] = None
-        self._register_projector_hook()
+        self._register_layernorm_hooks()
 
         # Per-env saccade state — populated in start() / start_episode()
         self.saccades: List[Optional[SaccadeStateMachine]] = []
@@ -371,23 +371,43 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         grid = img_size // patch_size
         return grid
 
-    # ── projector hook ────────────────────────────────────────────────────────
+    # ── post-RMSNorm hook (per LLaMA layer) ──────────────────────────────────
 
-    def _register_projector_hook(self):
-        N = self._patch_grid_size ** 2  # patches for one image (e.g. 256)
+    def _register_layernorm_hooks(self):
+        """Hook into each LLaMA layer's input_layernorm output.
 
-        def _hook(module, inp, output):
-            # output: [B, N_total, llm_dim]
-            # N_total = 2*N+1 for TraceVLA (two images + separator)
-            if not self._enable_latent_mask or self._current_weight_map is None:
-                return output
-            w = self._current_weight_map.to(dtype=output.dtype, device=output.device)
-            out = output.clone()
-            # Apply ONLY to first image's tokens; separator + trace image untouched
-            out[:, :N, :] = output[:, :N, :] * w.view(1, N, 1)
-            return out
+        After RMSNorm normalises the hidden state, we multiply the first
+        image's visual tokens (positions 1..N in the multimodal sequence,
+        because BOS occupies position 0) by the spatial weight map.
+        This ensures the weight survives into Q, K, V and is not diluted
+        by the normalisation itself.
 
-        self._hook_handle = self.vla.projector.register_forward_hook(_hook)
+        Only applies during prefill (seq_len > 1); autoregressive steps
+        (seq_len == 1) are skipped because visual tokens are in the KV cache.
+        """
+        N        = self._patch_grid_size ** 2   # 256
+        vis_start = 1                            # after BOS
+        vis_end   = vis_start + N                # 257
+
+        self._ln_hook_handles: List = []
+
+        for layer in self.vla.language_model.model.layers:
+            def _make_hook(vs: int, ve: int, n: int):
+                def _hook(module, inp, output):
+                    if not self._enable_latent_mask or self._current_weight_map is None:
+                        return output
+                    if output.shape[1] <= 1:      # generation step — skip
+                        return output
+                    w   = self._current_weight_map.to(dtype=output.dtype, device=output.device)
+                    out = output.clone()
+                    out[:, vs:ve, :] = output[:, vs:ve, :] * w.view(1, n, 1)
+                    return out
+                return _hook
+
+            handle = layer.input_layernorm.register_forward_hook(
+                _make_hook(vis_start, vis_end, N)
+            )
+            self._ln_hook_handles.append(handle)
 
     # ── per-env state management ──────────────────────────────────────────────
 
@@ -625,5 +645,5 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         return actions_list
 
     def __del__(self):
-        if hasattr(self, "_hook_handle"):
-            self._hook_handle.remove()
+        for handle in getattr(self, "_ln_hook_handles", []):
+            handle.remove()
