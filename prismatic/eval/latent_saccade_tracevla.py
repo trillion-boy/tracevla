@@ -154,13 +154,13 @@ class GroundingDINOWrapper:
                 target_sizes=target_sizes,
             )[0]
         if len(results["boxes"]) == 0:
-            return None
+            return None, 0.0
         best_idx = results["scores"].argmax().item()
         score = results["scores"][best_idx].item()
         box = results["boxes"][best_idx].cpu().numpy()
         x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
         print(f"[DINO] '{text_query.rstrip('.')}' score={score:.3f} → [{x1},{y1},{x2},{y2}]")
-        return x1, y1, x2, y2
+        return (x1, y1, x2, y2), score
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -367,6 +367,10 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
         self.fovea_cache: List[Optional[Tuple]] = []
         self.secondary_cache: List[Optional[Tuple]] = []
         self.dino_cache_step: List[int] = []
+        # Last bbox with score >= threshold; used as fallback for low-confidence detections
+        self._bbox_confidence_threshold: float = 0.3
+        self._last_good_fovea: List[Optional[Tuple]] = []
+        self._last_good_secondary: List[Optional[Tuple]] = []
 
     # ── patch grid auto-detection ─────────────────────────────────────────────
 
@@ -434,9 +438,11 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             )
             for _ in range(num_envs)
         ]
-        self.fovea_cache     = [None] * num_envs
-        self.secondary_cache = [None] * num_envs
-        self.dino_cache_step = [0]    * num_envs
+        self.fovea_cache        = [None] * num_envs
+        self.secondary_cache    = [None] * num_envs
+        self.dino_cache_step    = [0]    * num_envs
+        self._last_good_fovea   = [None] * num_envs
+        self._last_good_secondary = [None] * num_envs
 
     def start_episode(
         self,
@@ -468,9 +474,11 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
             self.saccades[idx].source_noun = src
             self.saccades[idx].dest_noun   = dst
             self.saccades[idx].reset()
-            self.fovea_cache[idx]     = None
-            self.secondary_cache[idx] = None
-            self.dino_cache_step[idx] = 0
+            self.fovea_cache[idx]          = None
+            self.secondary_cache[idx]      = None
+            self.dino_cache_step[idx]      = 0
+            self._last_good_fovea[idx]     = None
+            self._last_good_secondary[idx] = None
 
     # ── DINO bbox with per-env caching ────────────────────────────────────────
 
@@ -489,11 +497,27 @@ class LatentSaccadeTraceVLAInference(TraceVLAInference):
 
         saccade = self.saccades[env_idx]
         target  = saccade.current_target
-        fovea_bbox = self.dino.detect_bbox(image_np, target) if target else None
+        thr     = self._bbox_confidence_threshold
+
+        fovea_bbox = None
+        if target:
+            bbox, score = self.dino.detect_bbox(image_np, target)
+            if bbox is not None and score >= thr:
+                fovea_bbox = bbox
+                self._last_good_fovea[env_idx] = bbox
+            else:
+                fovea_bbox = self._last_good_fovea[env_idx]
+                if bbox is not None:
+                    print(f"[DINO] low-conf ({score:.3f} < {thr}) → using cached bbox")
 
         secondary_bbox = None
         if saccade.state == SaccadeStateMachine.PLACE and saccade.source_noun:
-            secondary_bbox = self.dino.detect_bbox(image_np, saccade.source_noun)
+            bbox, score = self.dino.detect_bbox(image_np, saccade.source_noun)
+            if bbox is not None and score >= thr:
+                secondary_bbox = bbox
+                self._last_good_secondary[env_idx] = bbox
+            else:
+                secondary_bbox = self._last_good_secondary[env_idx]
 
         self.fovea_cache[env_idx]     = fovea_bbox
         self.secondary_cache[env_idx] = secondary_bbox
