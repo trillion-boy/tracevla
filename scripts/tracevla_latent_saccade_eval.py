@@ -119,6 +119,12 @@ def get_image(env, obs, cam_name):
     return get_image_from_maniskill2_obs_dict(env, obs, camera_name=cam_name)
 
 
+def apply_brightness(image: np.ndarray, brightness: float) -> np.ndarray:
+    if brightness == 1.0:
+        return image
+    return (image.astype(np.float32) * brightness).clip(0, 255).astype(np.uint8)
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 def parse_args():
@@ -151,6 +157,8 @@ def parse_args():
     p.add_argument("--save-video",        action="store_true")
     p.add_argument("--disable-latent-mask", action="store_true",
                    help="Ablation: run baseline without weight masking")
+    p.add_argument("--brightness",        type=float, default=1.0,
+                   help="OOD brightness multiplier applied to obs image (0.0~1.0)")
     return p.parse_args()
 
 
@@ -164,7 +172,8 @@ def main():
 
     print(f"\n[init] Loading LatentSaccadeTraceVLAInference  task={args.task}")
     print(f"       bg={args.bg_weight}  src={args.place_src_weight}  "
-          f"fovea={args.fovea_weight}  mask={'OFF (baseline)' if args.disable_latent_mask else 'ON'}")
+          f"fovea={args.fovea_weight}  mask={'OFF (baseline)' if args.disable_latent_mask else 'ON'}"
+          f"  brightness={args.brightness}")
 
     model = LatentSaccadeTraceVLAInference(
         model_path=args.model_path,
@@ -194,7 +203,7 @@ def main():
         print(f"\n── ep {ep_count:02d} (env_id={ep_id}) ──────────────────────────")
         env, obs = build_env(task_cfg, ep_id)
         instruction = env.get_language_instruction()
-        image       = get_image(env, obs, cam_name)
+        image       = apply_brightness(get_image(env, obs, cam_name), args.brightness)
         print(f"   instruction: {instruction}")
 
         # start_episode expects list-of-dicts format
@@ -226,7 +235,7 @@ def main():
                     env_action["gripper"],
                 ])
             )
-            image = get_image(env, obs, cam_name)
+            image = apply_brightness(get_image(env, obs, cam_name), args.brightness)
 
             # track instruction changes (some tasks change mid-episode)
             new_instr = env.get_language_instruction()
@@ -261,6 +270,7 @@ def main():
     print(f"\n{'='*52}")
     print(f"  task:          {args.task}")
     print(f"  latent_mask:   {'OFF (baseline)' if args.disable_latent_mask else 'ON'}")
+    print(f"  brightness:    {args.brightness}")
     print(f"  bg={args.bg_weight}  src={args.place_src_weight}  fovea={args.fovea_weight}")
     print(f"  Success rate:  {n_ok}/{len(results)} = {sr:.1%}")
     print(f"  Avg steps:     {np.mean([r['steps'] for r in results]):.0f}")
@@ -273,6 +283,7 @@ def main():
         "model": "LatentSaccadeTraceVLA",
         "task":  args.task,
         "latent_mask_enabled": not args.disable_latent_mask,
+        "brightness": args.brightness,
         "success_rate": sr,
         "avg_steps": float(np.mean([r["steps"] for r in results])),
         "config": {
@@ -286,7 +297,9 @@ def main():
         },
         "episodes": results,
     }
-    save_path = os.path.join(args.output_dir, f"results_{args.task}.json")
+    brightness_tag = f"_b{args.brightness}" if args.brightness != 1.0 else ""
+    mask_tag       = "_baseline" if args.disable_latent_mask else ""
+    save_path = os.path.join(args.output_dir, f"results_{args.task}{brightness_tag}{mask_tag}.json")
     with open(save_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
     print(f"\nResults saved: {save_path}")
